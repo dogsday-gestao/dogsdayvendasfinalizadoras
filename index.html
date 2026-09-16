@@ -193,6 +193,7 @@ var PC=["#002395", "#FFD100", "#10b981", "#ef4444", "#8b5cf6", "#ec4899", "#06b6
 var F=D.slice(),pie=null,sc="total",sd="desc";
 var FIN_ALL=[];  // all finalizadora names
 var FIN_CHECKED={};  // name -> true/false
+var GT=0;  // Grand Total from ALL data (for participation %)
 
 function fm(v){
   if(!v)v=0;
@@ -224,6 +225,9 @@ function init(){
   lojas.forEach(function(l){var o=document.createElement("option");o.value=l;o.textContent=l;fl.appendChild(o)});
   var fm2=document.getElementById("fMes");
   MO.forEach(function(m){var o=document.createElement("option");o.value=m;o.textContent=MF[m]||m;fm2.appendChild(o)});
+
+  // Calculate grand total from ALL data
+  D.forEach(function(d){GT+=d["Vendas (R$)"]});
 
   // Build multi-select checkboxes
   buildFinCheckboxes();
@@ -378,11 +382,11 @@ function renderPie(){
   var a={};F.forEach(function(d){var k=d.Finalizadora;if(!a[k])a[k]=0;a[k]+=d["Vendas (R$)"]});
   var entries=[];for(var k in a)entries.push([k,a[k]]);
   entries.sort(function(x,y){return y[1]-x[1]});
-  var tot=entries.reduce(function(s,e){return s+e[1]},0);
+  var filteredTot=entries.reduce(function(s,e){return s+e[1]},0);
   var THRESHOLD=0.02;
   var mainEntries=[],outrosVal=0,outrosCount=0;
   entries.forEach(function(e){
-    if(e[1]/tot>=THRESHOLD){mainEntries.push(e)}
+    if(GT>0&&e[1]/GT>=THRESHOLD){mainEntries.push(e)}
     else{outrosVal+=e[1];outrosCount++}
   });
   if(outrosVal>0){mainEntries.push(["Outros ("+outrosCount+")",outrosVal])}
@@ -398,7 +402,7 @@ function renderPie(){
     options:{responsive:true,maintainAspectRatio:false,
       plugins:{legend:{position:"right",labels:{color:"#1E293B",font:{family:"Inter",size:10},padding:4,boxWidth:9,boxHeight:9,usePointStyle:true,pointStyle:"circle"}},
         tooltip:{backgroundColor:"#FFFFFF",titleColor:"#002395",bodyColor:"#1E293B",borderColor:"#E2E8F0",borderWidth:1,padding:8,
-          callbacks:{label:function(c){return " "+fm(c.raw)+" ("+(c.raw/mainTot*100).toFixed(1)+"%)"}}}},
+          callbacks:{label:function(c){return " "+fm(c.raw)+" ("+(GT>0?(c.raw/GT*100).toFixed(1):"0")+"%)"}}}},
       animation:{animateRotate:true,animateScale:true}}
   });
   document.getElementById("chartCount").textContent=lb.length+" itens";
@@ -406,14 +410,14 @@ function renderPie(){
 
 function renderRank(){
   var a={};F.forEach(function(d){var k=d.Finalizadora;if(!a[k])a[k]={v:0,q:0};a[k].v+=d["Vendas (R$)"];a[k].q+=d.Qtde});
-  var tot=0;for(var k in a)tot+=a[k].v;
+  var filteredTot=0;for(var k in a)filteredTot+=a[k].v;
   var entries=[];for(var k in a)entries.push([k,a[k]]);
   entries.sort(function(x,y){return y[1].v-x[1].v});
   var tb=document.getElementById("rankBody");tb.innerHTML="";
   document.getElementById("rankCount").textContent=entries.length+" itens";
   entries.forEach(function(item,i){
     var n=item[0],d=item[1];
-    var p=tot>0?d.v/tot*100:0;
+    var p=GT>0?d.v/GT*100:0;
     var cat=CM[n]||"Outros";
     var tr=document.createElement("tr");
     var rc=i===0?"top1":i===1?"top2":i===2?"top3":"";
@@ -456,11 +460,11 @@ function renderConsulta(){
     if(va<vb)return sd==="asc"?-1:1;if(va>vb)return sd==="asc"?1:-1;return 0;
   });
 
-  var grandTotal=0;rows.forEach(function(r){grandTotal+=r.total});
+  var filteredTotal=0;rows.forEach(function(r){filteredTotal+=r.total});
 
   var tb=document.getElementById("cBody");tb.innerHTML="";
   rows.forEach(function(r){
-    var p=grandTotal>0?r.total/grandTotal*100:0;
+    var p=GT>0?r.total/GT*100:0;
     var tr=document.createElement("tr");
     var monthTds="";
     MO.forEach(function(m){
@@ -487,9 +491,10 @@ function renderConsulta(){
   MO.forEach(function(m){
     monthTotalsTds+='<td class="text-right" style="font-weight:700;font-size:10px">'+fm(monthTotals[m])+'</td>';
   });
+  var totalPct=GT>0?(filteredTotal/GT*100).toFixed(2):"0.00";
   tfoot.innerHTML='<tr><td colspan="2" style="font-weight:700;font-size:10px;text-align:center">TOTAL GERAL</td>'+monthTotalsTds+
-    '<td class="text-right" style="font-weight:700;color:#002395;font-size:11px">'+fm(grandTotal)+'</td>'+
-    '<td class="text-right" style="font-weight:700;font-size:10px">100.00%</td></tr>';
+    '<td class="text-right" style="font-weight:700;color:#002395;font-size:11px">'+fm(filteredTotal)+'</td>'+
+    '<td class="text-right" style="font-weight:700;font-size:10px">'+totalPct+'%</td></tr>';
 }
 
 function exportCSV(){
@@ -501,7 +506,7 @@ function exportCSV(){
     pivot[key].months[d.Mes]+=d["Vendas (R$)"];
     pivot[key].total+=d["Vendas (R$)"];
   });
-  var grandTotal=0;for(var k in pivot)grandTotal+=pivot[k].total;
+  var csvTot=0;for(var k in pivot)csvTot+=pivot[k].total;
   var h="Loja;Finalizadora";
   MO.forEach(function(m){h+=";"+MF[m]});
   h+=";Total (R$);Part. (%)";
@@ -510,7 +515,7 @@ function exportCSV(){
     var r=pivot[k];
     var row=r.loja+";"+r.fin;
     MO.forEach(function(m){row+=";"+(r.months[m]||0).toFixed(2)});
-    row+=";"+r.total.toFixed(2)+";"+(grandTotal>0?(r.total/grandTotal*100).toFixed(2):"0");
+    row+=";"+r.total.toFixed(2)+";"+(GT>0?(r.total/GT*100).toFixed(2):"0");
     rows.push(row);
   }
   var csv=rows.join("\n");
